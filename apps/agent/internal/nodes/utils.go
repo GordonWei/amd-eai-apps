@@ -60,7 +60,7 @@ func getNodeStatus(node *corev1.Node) (string, bool) {
 func getGPUInfo(node *corev1.Node) *GPUInformation {
 	gpuCapacity, exists := node.Status.Capacity[GPUCapacityKey]
 	if !exists {
-		return nil
+		return getNVIDIAGPUInfo(node)
 	}
 
 	gpuCount := gpuCapacity.Value()
@@ -170,5 +170,50 @@ func mapNodeToClusterNode(node *corev1.Node) ClusterNode {
 		GPUInformation:        getGPUInfo(node),
 		Status:                status,
 		IsReady:               isReady,
+	}
+}
+
+// getNVIDIAGPUInfo reads GPU information from a node running the NVIDIA device plugin.
+// Count comes from the nvidia.com/gpu capacity (only devices the plugin actually advertises);
+// product, memory and family come from the labels set by GPU Feature Discovery.
+func getNVIDIAGPUInfo(node *corev1.Node) *GPUInformation {
+	gpuCapacity, exists := node.Status.Capacity[NVIDIAGPUCapacityKey]
+	if !exists {
+		return nil
+	}
+
+	gpuCount := gpuCapacity.Value()
+	if gpuCount == 0 {
+		return nil
+	}
+
+	labels := node.Labels
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+
+	gpuType := UnknownString
+	if val, ok := labels[NVIDIAGPUFamilyLabel]; ok && val != "" {
+		gpuType = val
+	}
+
+	productName := UnknownString
+	if val, ok := labels[NVIDIAGPUProductLabel]; ok && val != "" {
+		productName = strings.ReplaceAll(val, "-", " ")
+	}
+
+	var vramBytes int64 = 0
+	if val, ok := labels[NVIDIAGPUMemoryLabel]; ok {
+		if mib, err := strconv.ParseInt(val, 10, 64); err == nil && mib > 0 {
+			vramBytes = mib * 1024 * 1024
+		}
+	}
+
+	return &GPUInformation{
+		Count:              int32(gpuCount),
+		GPUType:            gpuType,
+		Vendor:             common.GPUVendorNVIDIA,
+		VRAMBytesPerDevice: vramBytes,
+		ProductName:        productName,
 	}
 }
