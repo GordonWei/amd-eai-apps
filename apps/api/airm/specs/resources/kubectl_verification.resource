@@ -336,3 +336,17 @@ Namespace should have label
     ${actual_value}=    Get From Dictionary    ${labels}    ${label_key}
     Should Be Equal    ${actual_value}    ${expected_value}
     ...    msg=Label ${label_key} has value ${actual_value}, expected ${expected_value}
+
+NVIDIA GPU nodes from Kubernetes
+    [Documentation]    Returns the Kubernetes nodes that advertise nvidia.com/gpu capacity
+    ...    (i.e. nodes running the NVIDIA device plugin), as node objects.
+
+    ${result}=    Run Process    kubectl    get    nodes    -o    json
+    ...    stdout=PIPE    stderr=PIPE
+    Should Be Equal As Integers    ${result.rc}    0
+    ...    msg=Failed to list nodes. Error: ${result.stderr}
+
+    ${nodes}=    Evaluate
+    ...    [n for n in json.loads($result.stdout)['items'] if int(n['status'].get('capacity', {}).get('nvidia.com/gpu', '0')) > 0]
+    ...    modules=json
+    RETURN    ${nodes}
